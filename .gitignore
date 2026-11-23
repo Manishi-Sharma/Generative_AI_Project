@@ -1,0 +1,29 @@
+# Environment Variables
+.env
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database
+*.db
+*.sqlite3
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated PDF reports
+*.pdf
+reports/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
