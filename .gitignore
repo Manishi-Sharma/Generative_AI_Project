@@ -27,3 +27,7 @@ reports/
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# IDE / Editor Settings
+.vscode/
+.idea/
