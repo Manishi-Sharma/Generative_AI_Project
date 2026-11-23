@@ -1,77 +1,59 @@
-"""
-Tests for financial calculations, ratios, interest, and currency formatting.
-"""
+import pytest
+from modules.financial_calculations import FinancialCalculator
 
-from utils.calculations import (
-    calculate_operating_profit,
-    calculate_net_profit,
-    calculate_profit_margin,
-    calculate_current_ratio,
-    calculate_debt_ratio,
-    calculate_roi,
-    calculate_simple_interest,
-    calculate_compound_interest,
-    calculate_npv,
-    format_currency,
-)
+def test_financial_calculator_complete_inputs():
+    test_metrics = {
+        "Revenue": 1000000.0,
+        "Operating Expenses": 600000.0,
+        "Operating Profit": 400000.0,
+        "Net Profit": 300000.0,
+        "Total Assets": 2000000.0,
+        "Shareholders' Equity": 1200000.0,
+        "Borrowings (Debt)": 500000.0,
+        "Cash and Cash Equivalents": 250000.0,
+        "Operating Cash Flow": 350000.0,
+        "Capital Expenditure": 100000.0
+    }
 
+    calcs = FinancialCalculator.calculate_all(test_metrics)
 
-def test_profit_calculations():
-    rev = 10_000_000.0
-    opex = 7_500_000.0
-    taxes = 500_000.0
-    loan = 200_000.0
+    # Operating Margin = (400,000 / 1,000,000) * 100 = 40.0%
+    assert calcs["Operating Margin"]["status"] == "Computed"
+    assert calcs["Operating Margin"]["value"] == 40.0
 
-    op_profit = calculate_operating_profit(rev, opex)
-    assert op_profit == 2_500_000.0
+    # Net Profit Margin = (300,000 / 1,000,000) * 100 = 30.0%
+    assert calcs["Net Profit Margin"]["status"] == "Computed"
+    assert calcs["Net Profit Margin"]["value"] == 30.0
 
-    net_profit = calculate_net_profit(op_profit, taxes, loan)
-    assert net_profit == 1_800_000.0
+    # ROA = (300,000 / 2,000,000) * 100 = 15.0%
+    assert calcs["Return on Assets (ROA)"]["status"] == "Computed"
+    assert calcs["Return on Assets (ROA)"]["value"] == 15.0
 
-    margin = calculate_profit_margin(net_profit, rev)
-    assert margin == 18.0
+    # ROE = (300,000 / 1,200,000) * 100 = 25.0%
+    assert calcs["Return on Equity (ROE)"]["status"] == "Computed"
+    assert calcs["Return on Equity (ROE)"]["value"] == 25.0
 
+    # Debt-to-Equity = 500,000 / 1,200,000 = ~0.4167
+    assert calcs["Debt-to-Equity Ratio"]["status"] == "Computed"
+    assert round(calcs["Debt-to-Equity Ratio"]["value"], 3) == 0.417
 
-def test_liquidity_and_debt_ratios():
-    assets = 50_000_000.0
-    liabilities = 20_000_000.0
+    # Free Cash Flow = 350,000 - 100,000 = 250,000
+    assert calcs["Free Cash Flow (FCF)"]["status"] == "Computed"
+    assert calcs["Free Cash Flow (FCF)"]["value"] == 250000.0
 
-    curr_ratio = calculate_current_ratio(assets, liabilities)
-    assert curr_ratio == 2.5
+def test_financial_calculator_missing_inputs_never_assumes_zero():
+    # Only revenue provided; net profit and debt are missing
+    partial_metrics = {
+        "Revenue": 500000.0,
+        "Total Assets": 1000000.0
+    }
+    calcs = FinancialCalculator.calculate_all(partial_metrics)
 
-    debt_ratio = calculate_debt_ratio(liabilities, assets)
-    assert debt_ratio == 0.40
+    # Operating margin should be incomplete, not zero
+    assert calcs["Operating Margin"]["status"] == "Inputs Incomplete"
+    assert calcs["Operating Margin"]["value"] is None
+    assert "Operating Profit" in calcs["Operating Margin"]["missing"]
 
-    # Zero protection
-    assert calculate_current_ratio(assets, 0) == 99.99
-    assert calculate_debt_ratio(liabilities, 0) == 1.0
-
-
-def test_investment_calculations():
-    principal = 1_000_000.0
-    rate = 0.10  # 10%
-    years = 2
-
-    # Simple interest: 1,000,000 * 0.10 * 2 = 200,000
-    si = calculate_simple_interest(principal, rate, years)
-    assert si == 200_000.0
-
-    # Compound interest: 1,000,000 * (1.10)^2 - 1,000,000 = 210,000
-    ci = calculate_compound_interest(principal, rate, years, compounding_frequency=1)
-    assert ci == 210_000.0
-
-    # ROI on gain of 210,000
-    roi = calculate_roi(principal + ci, principal)
-    assert roi == 21.0
-
-    # NPV: initial 1,000,000, cash flows [600,000, 600,000] at 10% discount rate
-    npv = calculate_npv(0.10, 1_000_000.0, [600_000.0, 600_000.0])
-    # PV = 600000/1.1 + 600000/1.21 = 545454.55 + 495867.77 = 1041322.31 - 1000000 = 41322.31
-    assert round(npv, 0) == 41322.0
-
-
-def test_currency_formatting():
-    assert "₹1.00 Cr" == format_currency(10_000_000.0, "₹", abbreviate=True)
-    assert "₹50.00 L" == format_currency(5_000_000.0, "₹", abbreviate=True)
-    assert "₹1,00,00,000.00" == format_currency(10_000_000.0, "₹", abbreviate=False)
-    assert "-₹50,000.00" == format_currency(-50_000.0, "₹", abbreviate=False)
+    # ROA requires Net Profit, so should be incomplete
+    assert calcs["Return on Assets (ROA)"]["status"] == "Inputs Incomplete"
+    assert calcs["Return on Assets (ROA)"]["value"] is None

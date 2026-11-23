@@ -1,291 +1,402 @@
-"""
-The Financial Butterfly Effect Mathematical Engine.
-Implements a directed weighted financial dependency graph using NetworkX,
-matrix ripple propagation (delta_next = A @ delta_current), feedback damping,
-saturation bounds, and multi-order causal ripple analysis.
-"""
-
-from typing import List, Dict, Any, Tuple, Optional
 import networkx as nx
 import numpy as np
-import pandas as pd
+import plotly.graph_objects as go
+from typing import Dict, Any, List, Optional, Tuple
 
-
-# 12 Core Financial Nodes
-NODES = [
-    "Revenue",
-    "Operating Expenses",
-    "Cash Reserves",
-    "Investment Capital",
-    "Employee Productivity",
-    "Production Capacity",
-    "Research and Development",
-    "Marketing",
-    "Profitability",
-    "Liquidity",
-    "Debt",
-    "Organisational Growth",
-]
-
-NODE_INDEX = {name: i for i, name in enumerate(NODES)}
-
-
-# Documented Economic Causal Dependencies
-DEFAULT_DEPENDENCIES = [
-    # (source, target, weight, description, is_positive)
-    ("Operating Expenses", "Profitability", -0.85, "Cost reductions immediately lift operating profit margins", False),
-    ("Operating Expenses", "Cash Reserves", -0.70, "Lower operating outflow preserves liquid cash reserves", False),
-    ("Operating Expenses", "Employee Productivity", 0.40, "Deep expense cuts (salaries, training, tooling) diminish staff morale and productivity", True),
-    ("Operating Expenses", "Production Capacity", 0.35, "Depriving operations of budget constrains throughput and maintenance capacity", True),
-    ("Cash Reserves", "Liquidity", 0.90, "Higher liquid cash directly bolsters quick and current liquidity ratios", True),
-    ("Cash Reserves", "Investment Capital", 0.65, "Surplus unencumbered cash expands capacity for capital allocation", True),
-    ("Cash Reserves", "Debt", -0.45, "Ample cash reserves allow retiring high-interest debt and credit facilities", False),
-    ("Investment Capital", "Research and Development", 0.60, "Capital allocation funds new technology, automation, and R&D pipelines", True),
-    ("Investment Capital", "Organisational Growth", 0.65, "Productive investments accelerate physical, digital, and market expansion", True),
-    ("Research and Development", "Employee Productivity", 0.50, "Process innovation and modern tools elevate productivity per worker", True),
-    ("Research and Development", "Revenue", 0.45, "Proprietary product improvements command pricing power and market share", True),
-    ("Marketing", "Revenue", 0.65, "Strategic customer acquisition campaigns directly drive top-line revenue", True),
-    ("Marketing", "Operating Expenses", 0.80, "Advertising and marketing campaigns add directly to operational expenditures", True),
-    ("Employee Productivity", "Production Capacity", 0.60, "A motivated and productive workforce maximizes unit throughput", True),
-    ("Employee Productivity", "Operating Expenses", -0.25, "High productivity minimizes rework, idle time, and overtime penalties", False),
-    ("Production Capacity", "Revenue", 0.70, "Greater operational capacity allows meeting surges in market demand", True),
-    ("Revenue", "Profitability", 0.90, "Gross sales volume directly drives the bottom-line profitability pool", True),
-    ("Revenue", "Cash Reserves", 0.65, "Top-line cash collections replenish liquid treasury reserves", True),
-    ("Profitability", "Cash Reserves", 0.75, "Retained earnings accumulate into permanent liquid treasury balances", True),
-    ("Profitability", "Organisational Growth", 0.70, "Consistently profitable enterprises reinvest free cash flow into scaling", True),
-    ("Debt", "Liquidity", -0.65, "Heavy debt amortization drains current working capital and liquidity", False),
-    ("Debt", "Operating Expenses", 0.30, "Interest expenses and financing costs inflate recurring fixed overhead", True),
-    ("Liquidity", "Organisational Growth", 0.35, "Solvent balance sheets enable seizing opportunistic market acquisitions", True),
-    ("Organisational Growth", "Revenue", 0.55, "Expanded geographical and customer footprint yields compounding revenue", True),
-]
-
-
-class ButterflyEngine:
+class ButterflyEffectEngine:
     """
-    Mathematical Financial Ripple-Effect Engine.
-    Constructs the directed dependency graph, builds matrix A,
-    and runs bounded multi-period simulations.
+    Financial Ripple-Effect & Dependency Simulation Engine.
+    Models interconnected corporate financial variables using a directed NetworkX graph
+    and a stabilized matrix multiplication propagation model:
+    change_next = dampening * (dependency_matrix @ change_current)
     """
 
-    def __init__(self, custom_dependencies: Optional[List[Tuple[str, str, float, str, bool]]] = None):
-        self.nodes = NODES
-        self.node_index = NODE_INDEX
-        self.num_nodes = len(self.nodes)
-        self.dependencies = custom_dependencies or DEFAULT_DEPENDENCIES
-        self.graph = self._build_graph()
-        self.adjacency_matrix = self._build_matrix()
+    VARIABLES = [
+        "Revenue",
+        "Operating Expenses",
+        "Operating Profit",
+        "Net Profit",
+        "Cash Flow",
+        "Cash Reserves",
+        "Debt",
+        "Investment Capacity",
+        "Capital Expenditure",
+        "Business Growth"
+    ]
 
-    def _build_graph(self) -> nx.DiGraph:
-        """Constructs a NetworkX DiGraph with nodes and weighted directed causal edges."""
-        G = nx.DiGraph()
-        for node in self.nodes:
-            G.add_node(node)
+    # Directed dependency edges: (Source, Target, Coefficient, Rationale)
+    # Coefficient > 0 means positive correlation; < 0 means inverse relationship.
+    EDGES = [
+        ("Revenue", "Operating Profit", 0.75, "Incremental revenue directly drops to operating profit after variable costs."),
+        ("Revenue", "Cash Flow", 0.65, "Higher sales generate cash receipts through customer collections."),
+        ("Revenue", "Business Growth", 0.40, "Top-line expansion drives market share and operational scale."),
 
-        for src, tgt, weight, desc, is_pos in self.dependencies:
-            if src in self.node_index and tgt in self.node_index:
-                G.add_edge(src, tgt, weight=weight, description=desc, is_positive=is_pos)
-        return G
+        ("Operating Expenses", "Operating Profit", -0.85, "Higher operational expenditures directly depress operating margin."),
+        ("Operating Expenses", "Cash Flow", -0.70, "Operational expenses require immediate working capital outflows."),
+        ("Operating Expenses", "Investment Capacity", -0.30, "Excess overhead absorbs discretionary liquid funds."),
 
-    def _build_matrix(self) -> np.ndarray:
-        """Constructs adjacency matrix A where A[tgt, src] = weight."""
-        A = np.zeros((self.num_nodes, self.num_nodes), dtype=np.float64)
-        for u, v, data in self.graph.edges(data=True):
-            src_idx = self.node_index[u]
-            tgt_idx = self.node_index[v]
-            A[tgt_idx, src_idx] = data.get("weight", 0.0)
-        return A
+        ("Operating Profit", "Net Profit", 0.80, "Operating earnings flow through to net income after interest and corporate taxes."),
 
-    def calculate_ripple(
+        ("Net Profit", "Cash Reserves", 0.60, "Retained earnings accumulate into liquid cash balances."),
+        ("Net Profit", "Investment Capacity", 0.75, "Bottom-line profitability expands internal capital financing headroom."),
+
+        ("Cash Flow", "Cash Reserves", 0.85, "Operating cash inflows directly bolster liquid treasury reserves."),
+        ("Cash Flow", "Debt", -0.35, "Strong cash generation enables scheduled debt principal reduction."),
+        ("Cash Flow", "Investment Capacity", 0.50, "Consistent cash generation improves borrowing power and solvency."),
+
+        ("Cash Reserves", "Investment Capacity", 0.70, "Unencumbered cash provides immediate self-funded expansion capability."),
+        ("Cash Reserves", "Debt", -0.20, "Surplus liquidity can be deployed to retire high-cost credit lines."),
+
+        ("Debt", "Net Profit", -0.30, "Higher borrowings increase mandatory interest expense burdens."),
+        ("Debt", "Cash Reserves", 0.45, "Debt issuance injects gross cash proceeds into balance sheet."),
+        ("Debt", "Investment Capacity", -0.40, "Excessive financial leverage constrains additional credit facilities."),
+
+        ("Capital Expenditure", "Cash Reserves", -0.75, "Asset investments require upfront cash disbursement."),
+        ("Capital Expenditure", "Debt", 0.35, "Large capex projects are partially funded through debt instruments."),
+        ("Capital Expenditure", "Business Growth", 0.60, "Productive asset investments increase future output capacity."),
+
+        ("Investment Capacity", "Capital Expenditure", 0.50, "Greater capital headroom enables strategic expansion initiatives."),
+        ("Investment Capacity", "Business Growth", 0.45, "Resource flexibility empowers market capture and new product launches."),
+
+        ("Business Growth", "Revenue", 0.60, "Enlarged market footprint drives future sales volume."),
+        ("Business Growth", "Operating Expenses", 0.35, "Scale expansion requires additional staffing and operational infrastructure.")
+    ]
+
+    def __init__(self):
+        self.graph = nx.DiGraph()
+        for v in self.VARIABLES:
+            self.graph.add_node(v)
+
+        for src, dst, coeff, rationale in self.EDGES:
+            self.graph.add_edge(src, dst, weight=coeff, rationale=rationale)
+
+        # Build numerical dependency matrix W of shape (N, N) where W[i, j] = effect of j on i
+        self.n = len(self.VARIABLES)
+        self.var_to_idx = {v: i for i, v in enumerate(self.VARIABLES)}
+        self.idx_to_var = {i: v for i, v in enumerate(self.VARIABLES)}
+        self.W = np.zeros((self.n, self.n), dtype=np.float64)
+
+        for src, dst, coeff, _ in self.EDGES:
+            i = self.var_to_idx[dst]
+            j = self.var_to_idx[src]
+            self.W[i, j] = coeff
+
+    def simulate(
         self,
-        initial_shocks: Dict[str, float],
-        scenario_multiplier: float = 1.0,
-        damping_factor: float = 0.85,
-        max_periods: int = 5,
+        initial_var: str,
+        initial_change_pct: float,
+        time_horizon: str = "1 Year",
+        dampening: float = 0.60,
+        baselines: Optional[Dict[str, Optional[float]]] = None
     ) -> Dict[str, Any]:
         """
-        Executes multi-order and multi-period ripple propagation.
-
-        Model:
-        delta_0 = initial shock vector (Order 0)
-        delta_1 = A @ delta_0 (First-order downstream)
-        delta_2 = A @ delta_1 (Second-order downstream)
-        
-        Multi-period evolution:
-        delta_{t+1} = gamma * tanh( A @ delta_t ) + nonlinear_feedback(delta_t)
+        Executes step-by-step ripple simulation with mathematical stabilization.
+        Preventing exponential explosion via dampening factor lambda < 1.0.
         """
-        delta_0 = np.zeros(self.num_nodes, dtype=np.float64)
-        for node_name, shock_pct in initial_shocks.items():
-            if node_name in self.node_index:
-                delta_0[self.node_index[node_name]] = float(shock_pct)
+        if initial_var not in self.var_to_idx:
+            raise ValueError(f"Variable '{initial_var}' not recognized in simulation model.")
 
-        # Scale matrix by scenario sensitivity (Optimistic, Baseline, Pessimistic)
-        A_eff = self.adjacency_matrix * scenario_multiplier
-
-        # Order 0: Direct User Decisions
-        direct_impact = {node: delta_0[self.node_index[node]] for node in self.nodes if delta_0[self.node_index[node]] != 0}
-
-        # Order 1: First-Order Consequences
-        delta_1 = A_eff @ delta_0
-        first_order = {self.nodes[i]: float(delta_1[i]) for i in range(self.num_nodes) if abs(delta_1[i]) > 1e-4}
-
-        # Order 2: Second-Order Downstream Repercussions
-        delta_2 = A_eff @ delta_1
-        second_order = {self.nodes[i]: float(delta_2[i]) for i in range(self.num_nodes) if abs(delta_2[i]) > 1e-4}
-
-        # Multi-Period Simulation over T years
-        # Keep track of cumulative delta trajectories
-        trajectories: Dict[str, List[float]] = {node: [] for node in self.nodes}
-        period_names = [f"Year {t}" for t in range(1, max_periods + 1)]
-
-        current_delta = delta_0.copy()
-        cumulative_state = np.zeros(self.num_nodes, dtype=np.float64)
-
-        for t in range(max_periods):
-            # Compute raw next-period change
-            raw_next = A_eff @ current_delta
-
-            # Non-linear threshold feedback penalty:
-            # If Operating Expenses are cut by > 10% (delta < -0.10),
-            # productivity drops non-linearly due to severe organizational stress
-            opex_idx = self.node_index["Operating Expenses"]
-            prod_idx = self.node_index["Employee Productivity"]
-            if current_delta[opex_idx] < -0.10:
-                severe_cut = abs(current_delta[opex_idx]) - 0.10
-                raw_next[prod_idx] -= severe_cut * 0.75  # Damaging penalty
-
-            # Apply bounded damping using tanh to prevent runaway explosions
-            # Ensures realistic percentage movements
-            next_delta = damping_factor * np.tanh(raw_next)
-
-            # Cumulative state integrates the period deltas with natural mean-reversion
-            cumulative_state = 0.90 * cumulative_state + next_delta
-
-            for i, node in enumerate(self.nodes):
-                trajectories[node].append(float(cumulative_state[i]))
-
-            current_delta = next_delta
-
-        # Filter positive and negative consequences
-        positive_consequences = []
-        negative_consequences = []
-
-        for node in self.nodes:
-            net_change = trajectories[node][-1]
-            if abs(net_change) < 0.005:
-                continue
-
-            # Contextualize polarity (for expenses and debt, reduction is positive)
-            if node in ["Operating Expenses", "Debt"]:
-                is_benefit = net_change < 0
-            else:
-                is_benefit = net_change > 0
-
-            desc_text = f"{node}: {net_change:+.1%} cumulative 5-year impact"
-            if is_benefit:
-                positive_consequences.append(desc_text)
-            else:
-                negative_consequences.append(desc_text)
-
-        # Build causal explanations
-        causal_chains = self._explain_causal_chains(initial_shocks)
-
-        return {
-            "initial_shocks": initial_shocks,
-            "direct_impact": direct_impact,
-            "first_order_effects": first_order,
-            "second_order_effects": second_order,
-            "trajectories": trajectories,
-            "period_names": period_names,
-            "positive_consequences": positive_consequences,
-            "negative_consequences": negative_consequences,
-            "causal_chains": causal_chains,
-            "final_5yr_deltas": {node: trajectories[node][-1] for node in self.nodes},
+        # Horizon steps
+        horizon_steps_map = {
+            "1 Quarter": 1,
+            "2 Quarters": 2,
+            "1 Year": 3,
+            "2 Years": 4,
+            "3 Years": 5,
+            "5 Years": 6
         }
+        num_steps = horizon_steps_map.get(time_horizon, 3)
 
-    def _explain_causal_chains(self, initial_shocks: Dict[str, float]) -> List[str]:
-        """Generates step-by-step human-readable explanations of active ripple chains."""
-        chains = []
-        for shock_node, shock_val in initial_shocks.items():
-            if abs(shock_val) < 1e-4 or shock_node not in self.graph:
-                continue
+        # Vector of state changes at each step
+        delta_history = []
+        change_current = np.zeros(self.n, dtype=np.float64)
+        init_idx = self.var_to_idx[initial_var]
+        change_current[init_idx] = initial_change_pct
+        delta_history.append(change_current.copy())
 
-            direction = "decreased" if shock_val < 0 else "increased"
-            chains.append(f"Decision: {shock_node} is {direction} by {abs(shock_val):.1%}.")
+        # Propagate step by step: change_next = dampening * (W @ change_current)
+        for step in range(1, num_steps + 1):
+            change_next = dampening * (self.W @ change_current)
+            # Cap extreme shifts to ensure realistic bounds (-100% to +300%)
+            change_next = np.clip(change_next, -100.0, 300.0)
+            delta_history.append(change_next.copy())
+            change_current = change_next
 
-            # Downstream immediate successors
-            successors = list(self.graph.successors(shock_node))
-            for succ in successors:
-                edge_data = self.graph.get_edge_data(shock_node, succ)
-                weight = edge_data["weight"]
-                succ_effect = shock_val * weight
-                succ_dir = "expands" if succ_effect > 0 else "contracts"
-                desc = edge_data.get("description", "")
-                chains.append(
-                    f"  ↳ Direct Effect: {succ} {succ_dir} by {abs(succ_effect):.1%} ({desc})."
-                )
+        # Total cumulative delta across all steps
+        cumulative_deltas = np.sum(delta_history, axis=0)
 
-                # 2nd order downstream paths
-                second_succs = list(self.graph.successors(succ))[:2]
-                for s2 in second_succs:
-                    if s2 == shock_node:
-                        continue
-                    e2 = self.graph.get_edge_data(succ, s2)
-                    w2 = e2["weight"]
-                    s2_effect = succ_effect * w2
-                    s2_dir = "improves" if s2_effect > 0 else "degrades"
-                    chains.append(
-                        f"     ↳ Ripple Consequence: {s2} {s2_dir} by {abs(s2_effect):.1%} ({e2.get('description', '')})."
-                    )
-        return chains
+        # Baseline alignment
+        baselines = baselines or {}
+        variable_results = {}
+        for i, var_name in enumerate(self.VARIABLES):
+            cum_pct = float(cumulative_deltas[i])
+            base_val = baselines.get(var_name)
+            sim_val = None
+            if base_val is not None:
+                sim_val = base_val * (1.0 + cum_pct / 100.0)
 
-    def simulate_scenarios(
-        self,
-        initial_shocks: Dict[str, float],
-        base_financials: Dict[str, float]
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Runs and compares 3 standard macro scenarios:
-        1. Baseline: standard theoretical sensitivity
-        2. Optimistic: +20% favorable elasticity and higher investment yields
-        3. Pessimistic: -25% market friction, amplified operational risk
-        """
-        scenarios = {
-            "Baseline": {"multiplier": 1.0, "damping": 0.85},
-            "Optimistic": {"multiplier": 1.20, "damping": 0.90},
-            "Pessimistic": {"multiplier": 0.80, "damping": 0.80},
-        }
-
-        results = {}
-        base_rev = base_financials.get("revenue", 10_000_000.0)
-        base_exp = base_financials.get("operating_expenses", 7_500_000.0)
-        base_cash = base_financials.get("cash_reserves", 2_500_000.0)
-        base_assets = base_financials.get("assets", 15_000_000.0)
-        base_liab = base_financials.get("liabilities", 5_000_000.0)
-
-        for sc_name, sc_params in scenarios.items():
-            sim = self.calculate_ripple(
-                initial_shocks=initial_shocks,
-                scenario_multiplier=sc_params["multiplier"],
-                damping_factor=sc_params["damping"],
-                max_periods=5,
-            )
-            deltas = sim["final_5yr_deltas"]
-
-            proj_rev = base_rev * (1.0 + deltas.get("Revenue", 0.0))
-            proj_exp = base_exp * (1.0 + deltas.get("Operating Expenses", 0.0))
-            proj_cash = base_cash * (1.0 + deltas.get("Cash Reserves", 0.0))
-            proj_profit = proj_rev - proj_exp
-
-            proj_assets = base_assets * (1.0 + deltas.get("Organisational Growth", 0.0) * 0.5)
-            proj_liab = base_liab * (1.0 + deltas.get("Debt", 0.0))
-            curr_ratio = proj_assets / proj_liab if proj_liab > 0 else 99.9
-
-            results[sc_name] = {
-                "Revenue": round(proj_rev, 2),
-                "Operating Expenses": round(proj_exp, 2),
-                "Net Profit": round(proj_profit, 2),
-                "Cash Reserves": round(proj_cash, 2),
-                "Liquidity Ratio": round(curr_ratio, 2),
+            variable_results[var_name] = {
+                "initial_delta_pct": float(delta_history[0][i]),
+                "step1_direct_pct": float(delta_history[1][i]) if len(delta_history) > 1 else 0.0,
+                "step2_ripple_pct": float(delta_history[2][i]) if len(delta_history) > 2 else 0.0,
+                "cumulative_delta_pct": cum_pct,
+                "baseline_value": base_val,
+                "simulated_value": sim_val
             }
 
-        return results
+        # Detailed step breakdowns with rationales
+        step_narratives = []
+        step_narratives.append({
+            "step": 0,
+            "title": "Initial Hypothetical Decision",
+            "impacts": [{
+                "variable": initial_var,
+                "change_pct": initial_change_pct,
+                "description": f"User-specified baseline perturbation of {initial_change_pct:+.2f}% applied to {initial_var}."
+            }]
+        })
+
+        for s in range(1, len(delta_history)):
+            step_deltas = delta_history[s]
+            notable = []
+            for i, d in enumerate(step_deltas):
+                if abs(d) >= 0.05:  # Significant shift threshold
+                    var = self.idx_to_var[i]
+                    # Find driving incoming edges from previous step
+                    drivers = []
+                    prev_step = delta_history[s - 1]
+                    for src, dst, data in self.graph.in_edges(var, data=True):
+                        src_idx = self.var_to_idx[src]
+                        if abs(prev_step[src_idx]) >= 0.05:
+                            drivers.append(f"{src} ({prev_step[src_idx]:+.1f}%) -> {data.get('rationale')}")
+
+                    notable.append({
+                        "variable": var,
+                        "change_pct": float(d),
+                        "drivers": drivers
+                    })
+
+            step_title = "Immediate Direct Financial Impact" if s == 1 else (
+                "First-Order Ripple Effects" if s == 2 else f"Order-{s} Propagation & Feedback Effects"
+            )
+            step_narratives.append({
+                "step": s,
+                "title": step_title,
+                "impacts": notable
+            })
+
+        # Categorize positive and negative consequences
+        positive_effects = []
+        negative_effects = []
+        for var, res in variable_results.items():
+            pct = res["cumulative_delta_pct"]
+            if abs(pct) < 0.2:
+                continue
+
+            # Variable interpretation of positive vs negative
+            # For Debt and Operating Expenses, reduction is generally positive
+            if var in ["Debt", "Operating Expenses"]:
+                if pct < 0:
+                    positive_effects.append(f"{var} decreased by {abs(pct):.2f}% (improved cost efficiency / lower leverage).")
+                else:
+                    negative_effects.append(f"{var} increased by {pct:+.2f}% (higher cost burden / debt load).")
+            else:
+                if pct > 0:
+                    positive_effects.append(f"{var} expanded by {pct:+.2f}% (favorable capacity / margin gain).")
+                else:
+                    negative_effects.append(f"{var} contracted by {abs(pct):.2f}% (downward pressure on profitability / resources).")
+
+        return {
+            "initial_variable": initial_var,
+            "initial_change_pct": initial_change_pct,
+            "time_horizon": time_horizon,
+            "num_steps": num_steps,
+            "variable_results": variable_results,
+            "step_narratives": step_narratives,
+            "positive_consequences": positive_effects,
+            "negative_consequences": negative_effects,
+            "assumptions": [
+                "The matrix dependency model assumes stable market conditions without sudden exogenous macro shocks.",
+                "Inter-variable transmission coefficients reflect general corporate finance mechanics and standard cost accounting behavior.",
+                f"A stabilization dampening factor of lambda = {dampening} is applied per iteration to prevent unrealistic unbounded feedback.",
+                "Hypothetical adjustments are simulation projections and do not reflect official corporate management forecasts."
+            ]
+        }
+
+    def generate_plotly_network(self, sim_data: Dict[str, Any]) -> go.Figure:
+        """
+        Creates an interactive Plotly directed graph visualization of the financial butterfly effect.
+        """
+        pos = nx.circular_layout(self.graph)
+
+        edge_x = []
+        edge_y = []
+        edge_annotations = []
+
+        initial_var = sim_data["initial_variable"]
+        var_results = sim_data["variable_results"]
+
+        for edge in self.graph.edges(data=True):
+            src, dst, data = edge
+            x0, y0 = pos[src]
+            x1, y1 = pos[dst]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+
+            # Small arrow annotation
+            coeff = data.get("weight", 0)
+            color = "#00F5D4" if coeff > 0 else "#FF5964"
+
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=1.2, color="rgba(100, 150, 220, 0.35)"),
+            hoverinfo="none",
+            mode="lines"
+        )
+
+        node_x = []
+        node_y = []
+        node_text = []
+        node_colors = []
+        node_sizes = []
+
+        for node in self.graph.nodes():
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+
+            res = var_results.get(node, {})
+            cum_pct = res.get("cumulative_delta_pct", 0.0)
+
+            # Node styling
+            if node == initial_var:
+                node_colors.append("#7B2CBF") # Purple highlight for root shock
+                node_sizes.append(42)
+            elif cum_pct > 0.5:
+                node_colors.append("#00F5D4") # Bright Teal / Green for positive
+                node_sizes.append(34)
+            elif cum_pct < -0.5:
+                node_colors.append("#FF5964") # Coral / Red for negative
+                node_sizes.append(34)
+            else:
+                node_colors.append("#4A90E2") # Neutral Blue
+                node_sizes.append(28)
+
+            hover_lbl = f"<b>{node}</b><br>Cumulative Shift: {cum_pct:+.2f}%"
+            if res.get("baseline_value") is not None and res.get("simulated_value") is not None:
+                hover_lbl += f"<br>Baseline: {res['baseline_value']:,.1f}<br>Simulated: {res['simulated_value']:,.1f}"
+            node_text.append(hover_lbl)
+
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode="markers+text",
+            hoverinfo="text",
+            text=[f"<b>{n}</b>" for n in self.graph.nodes()],
+            textposition="top center",
+            hovertext=node_text,
+            textfont=dict(color="#FFFFFF", size=11, family="Inter, sans-serif"),
+            marker=dict(
+                color=node_colors,
+                size=node_sizes,
+                line=dict(width=2, color="#FFFFFF")
+            )
+        )
+
+        fig = go.Figure(
+            data=[edge_trace, node_trace],
+            layout=go.Layout(
+                title=dict(
+                    text="<b>Financial Dependency Ripple Network (Directed Propagation Graph)</b>",
+                    font=dict(color="#FEFCFB", size=16)
+                ),
+                showlegend=False,
+                hovermode="closest",
+                paper_bgcolor="#0A1128",
+                plot_bgcolor="#0A1128",
+                margin=dict(b=40, l=40, r=40, t=60),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=520
+            )
+        )
+        return fig
+
+    def generate_comparison_chart(self, sim_data: Dict[str, Any]) -> go.Figure:
+        """
+        Creates a grouped bar chart of baseline vs simulated figures for metrics with baseline data.
+        """
+        var_results = sim_data["variable_results"]
+        categories = []
+        baseline_vals = []
+        simulated_vals = []
+
+        for var, res in var_results.items():
+            if res.get("baseline_value") is not None and res.get("simulated_value") is not None:
+                categories.append(var)
+                baseline_vals.append(res["baseline_value"])
+                simulated_vals.append(res["simulated_value"])
+
+        if not categories:
+            # If no absolute baselines, display percentage deltas bar chart
+            return self._generate_delta_pct_chart(sim_data)
+
+        fig = go.Figure(data=[
+            go.Bar(
+                name="Baseline (Reported)",
+                x=categories,
+                y=baseline_vals,
+                marker_color="#3A86FF"
+            ),
+            go.Bar(
+                name="Simulated Scenario",
+                x=categories,
+                y=simulated_vals,
+                marker_color="#00F5D4"
+            )
+        ])
+
+        fig.update_layout(
+            barmode="group",
+            title=dict(
+                text="<b>Baseline vs Simulated Scenario Comparison (Reported Currency)</b>",
+                font=dict(color="#FEFCFB", size=16)
+            ),
+            paper_bgcolor="#0A1128",
+            plot_bgcolor="#001F54",
+            font=dict(color="#FEFCFB"),
+            xaxis=dict(gridcolor="#1282A2"),
+            yaxis=dict(gridcolor="#1282A2"),
+            height=420,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        return fig
+
+    def _generate_delta_pct_chart(self, sim_data: Dict[str, Any]) -> go.Figure:
+        """Fallback chart when absolute baseline amounts are unrecorded."""
+        var_results = sim_data["variable_results"]
+        vars_list = list(var_results.keys())
+        pcts = [var_results[v]["cumulative_delta_pct"] for v in vars_list]
+        colors = ["#00F5D4" if p >= 0 else "#FF5964" for p in pcts]
+
+        fig = go.Figure(data=[
+            go.Bar(
+                x=vars_list,
+                y=pcts,
+                marker_color=colors,
+                text=[f"{p:+.1f}%" for p in pcts],
+                textposition="auto"
+            )
+        ])
+        fig.update_layout(
+            title=dict(
+                text="<b>Simulated Percentage Shift by Variable (Cumulative Ripple Effect)</b>",
+                font=dict(color="#FEFCFB", size=16)
+            ),
+            paper_bgcolor="#0A1128",
+            plot_bgcolor="#001F54",
+            font=dict(color="#FEFCFB"),
+            xaxis=dict(gridcolor="#1282A2"),
+            yaxis=dict(gridcolor="#1282A2", title="Cumulative Change (%)"),
+            height=420
+        )
+        return fig

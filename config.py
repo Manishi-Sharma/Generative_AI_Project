@@ -1,69 +1,32 @@
-"""
-Configuration management for The Financial Butterfly Effect application.
-Loads settings from environment variables and sets system-wide constants.
-"""
-
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Base Directory of the Project
+# Base Directory
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load .env if present
+# Load .env file
 load_dotenv(BASE_DIR / ".env")
 
-# App Info
-APP_NAME = "The Financial Butterfly Effect"
-APP_SUBTITLE = "AI-Based Multi-Organisation Financial Ripple-Effect Analysis & Decision Support System"
-APP_VERSION = "2.0.0"
+# NVIDIA Configuration
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1").strip()
+NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b").strip()
 
-# Security & Sessions
-SECRET_KEY = os.getenv("SECRET_KEY", "financial-butterfly-secret-key-change-in-production-2026")
+# Tavily Configuration
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 
-# Database Configuration (SQLite default with full PostgreSQL compatibility)
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'financial_butterfly.db'}")
+# Database Configuration
+DATABASE_PATH = BASE_DIR / "financial_butterfly.db"
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH.as_posix()}")
 
-# NVIDIA NIM AI Configuration
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
-NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-# Primary Nemotron reasoning/instruction model with fast fallback options
-NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-4-340b-instruct")
-NVIDIA_TIMEOUT_SECONDS = int(os.getenv("NVIDIA_TIMEOUT_SECONDS", "30"))
+# App Secret Key for session / security
+SECRET_KEY = os.getenv("SECRET_KEY", "financial_butterfly_effect_default_secret_2026")
 
-# Currency and Localization
-DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "₹")
-CURRENCY_CODE = os.getenv("CURRENCY_CODE", "INR")
+# SEC EDGAR User-Agent header (required by SEC EDGAR API guidelines)
+SEC_USER_AGENT = os.getenv("SEC_USER_AGENT", "FinancialButterflyEffect StudentResearch/1.0 (academic.research@university.edu)")
 
-# System Directories
-REPORTS_DIR = BASE_DIR / "reports"
-MODELS_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data"
-
-for directory in [REPORTS_DIR, MODELS_DIR, DATA_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
-
-# Butterfly Engine Configuration
-DEFAULT_DAMPING_FACTOR = 0.85  # Exponential decay to ensure stability
-MAX_SIMULATION_YEARS = 5
-DEFAULT_MONTE_CARLO_ITERATIONS = 1000
-
-# Roles definition
-ROLE_PLATFORM_ADMIN = "platform_admin"
-ROLE_ORG_ADMIN = "org_admin"
-ROLE_FINANCIAL_MANAGER = "financial_manager"
-ROLE_FINANCIAL_ANALYST = "financial_analyst"
-
-ALL_ROLES = [
-    ROLE_PLATFORM_ADMIN,
-    ROLE_ORG_ADMIN,
-    ROLE_FINANCIAL_MANAGER,
-    ROLE_FINANCIAL_ANALYST,
-]
-
-ROLE_DISPLAY_NAMES = {
-    ROLE_PLATFORM_ADMIN: "Platform Administrator",
-    ROLE_ORG_ADMIN: "Organisation Administrator",
-    ROLE_FINANCIAL_MANAGER: "Financial Manager",
-    ROLE_FINANCIAL_ANALYST: "Financial Analyst",
-}
+# Data Availability Constants
+STATUS_FOUND = "PUBLIC INFORMATION FOUND"
+STATUS_NOT_AVAILABLE = "NOT PUBLICLY AVAILABLE"
+STATUS_RESTRICTED = "INFORMATION IS PRIVATE / ACCESS RESTRICTED"

@@ -1,388 +1,280 @@
-"""
-THE FINANCIAL BUTTERFLY EFFECT
-AI-Based Multi-Organisation Financial Ripple-Effect Analysis & Decision Support System
-Master Streamlit Application
-"""
+import sys
+from pathlib import Path
+
+# Ensure root workspace directory is in python search path
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 import streamlit as st
-import config
-from database.connection import init_db, get_db_context
-from database.initialisation import seed_database
-from database.models import User, Organisation
-from modules.authentication import (
-    authenticate_user,
-    register_user,
-    check_permission,
+from config import SECRET_KEY
+from database.connection import init_db
+from auth.authentication import authenticate_user, create_user
+from views.organisation_search import render_organisation_search
+from views.financial_overview import render_financial_overview
+from views.butterfly_analysis import render_butterfly_analysis
+from views.ai_reports import render_ai_reports
+
+# 1. Page Configuration
+st.set_page_config(
+    page_title="The Financial Butterfly Effect",
+    page_icon="🦋",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-from modules.organisation import get_user_organisations, get_organisation_by_id
-from modules.nvidia_client import nvidia_client
 
-# Modular Page Renderers
-from pages.dashboard import render_dashboard
-from pages.organisations import render_organisations_page
-from pages.financial_records import render_financial_records_page
-from pages.investments import render_investments_page
-from pages.savings import render_savings_page
-from pages.simulator import render_simulator_page
-from pages.scenarios import render_scenarios_page
-from pages.predictions import render_predictions_page
-from pages.risk_analysis import render_risk_analysis_page
-from pages.ai_assistant import render_ai_assistant_page
-from pages.reports import render_reports_page
-from pages.settings import render_settings_page
+# 2. Initialize Database tables
+init_db()
 
-
-# Streamlit Page Setup
-try:
-    st.set_page_config(
-        page_title=config.APP_NAME,
-        page_icon="🦋",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-except Exception:
-    pass
-
-# Custom Enterprise CSS (Deep Navy, Emerald Green, Subtle Gold)
-CUSTOM_CSS = """
+# 3. Custom CSS for Modern Dark Navy FinTech Interface
+DARK_NAVY_CSS = """
 <style>
-    /* Global Background and Typography */
+    /* Global Base */
     .stApp {
-        background: linear-gradient(135deg, #070d1e 0%, #0b132b 50%, #0d1b2a 100%);
-        color: #e2e8f0;
-        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        background-color: #0A1128 !important;
+        color: #FEFCFB !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
-    /* Top Header and Branding */
+
+    /* Top Header Bar */
     header[data-testid="stHeader"] {
-        background-color: transparent !important;
+        background-color: #0A1128 !important;
+    }
+
+    /* Hide Deploy Button and Header Clutter */
+    .stDeployButton,
+    div[data-testid="stToolbarActions"],
+    div[data-testid="stDeployButton"],
+    button[title="Deploy this app"],
+    #MainMenu,
+    footer {
+        display: none !important;
+        visibility: hidden !important;
     }
 
     /* Sidebar Styling */
     section[data-testid="stSidebar"] {
-        background-color: #0c1427 !important;
-        border-right: 1px solid #1e293b;
-    }
-    section[data-testid="stSidebar"] .stMarkdown h1, 
-    section[data-testid="stSidebar"] .stMarkdown h2, 
-    section[data-testid="stSidebar"] .stMarkdown h3 {
-        color: #f59e0b !important;
+        background-color: #001F54 !important;
+        border-right: 1px solid #034078 !important;
     }
 
-    /* Card Containers */
-    div[data-testid="stMetric"] {
-        background-color: #1c2541 !important;
-        border: 1px solid #273549 !important;
-        border-radius: 10px !important;
-        padding: 14px 18px !important;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] label {
+        color: #FEFCFB !important;
     }
-    div[data-testid="stMetricLabel"] {
-        color: #94a3b8 !important;
+
+    /* Metric Cards */
+    div[data-testid="stMetric"] {
+        background-color: #001F54 !important;
+        padding: 14px !important;
+        border-radius: 8px !important;
+        border: 1px solid #1282A2 !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+    }
+    div[data-testid="stMetricLabel"] p {
+        color: #A0C4E2 !important;
         font-size: 13px !important;
         font-weight: 600 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
-    div[data-testid="stMetricValue"] {
-        color: #f8fafc !important;
+    div[data-testid="stMetricValue"] div {
+        color: #FEFCFB !important;
+        font-size: 22px !important;
         font-weight: 700 !important;
     }
-    div[data-testid="stMetricDelta"] {
-        font-weight: 600 !important;
-    }
 
-    /* Buttons */
-    button[kind="primary"] {
-        background: linear-gradient(90deg, #10b981 0%, #059669 100%) !important;
-        color: #ffffff !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 8px 20px !important;
-        transition: all 0.2s ease-in-out;
-    }
-    button[kind="primary"]:hover {
-        background: linear-gradient(90deg, #059669 0%, #047857 100%) !important;
-        box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
-    }
-    button[kind="secondary"] {
-        background-color: #1e293b !important;
-        color: #cbd5e1 !important;
-        border: 1px solid #334155 !important;
-        border-radius: 8px !important;
-    }
-
-    /* Tabs */
-    button[data-baseweb="tab"] {
-        background-color: transparent !important;
-        color: #94a3b8 !important;
-        font-weight: 600 !important;
-    }
-    button[aria-selected="true"] {
-        color: #10b981 !important;
-        border-bottom-color: #10b981 !important;
-    }
-
-    /* Form Inputs */
-    input, select, textarea {
-        background-color: #131d36 !important;
-        color: #f8fafc !important;
-        border: 1px solid #273549 !important;
+    /* Inputs and Buttons */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div > div {
+        background-color: #001F54 !important;
+        color: #FEFCFB !important;
+        border: 1px solid #1282A2 !important;
         border-radius: 6px !important;
     }
 
-    /* Dataframe styling */
-    div[data-testid="stDataFrame"] {
-        border: 1px solid #273549;
-        border-radius: 8px;
-        overflow: hidden;
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #1282A2 0%, #034078 100%) !important;
+        color: #FEFCFB !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
     }
 
-    /* Alerts */
-    div[data-testid="stAlert"] {
-        background-color: #132238 !important;
-        border: 1px solid #224263 !important;
+    button[kind="secondary"] {
+        background-color: #001F54 !important;
+        color: #00F5D4 !important;
+        border: 1px solid #1282A2 !important;
+        border-radius: 6px !important;
+    }
+
+    /* Dataframe and Tables */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #1282A2 !important;
         border-radius: 8px !important;
+    }
+
+    /* Info & Alert Callouts */
+    .stAlert {
+        background-color: #001F54 !important;
+        color: #FEFCFB !important;
+        border: 1px solid #1282A2 !important;
+    }
+
+    /* Custom Title Pill */
+    .title-pill {
+        display: inline-block;
+        padding: 6px 14px;
+        background: rgba(18, 130, 162, 0.2);
+        border: 1px solid #1282A2;
+        border-radius: 20px;
+        color: #00F5D4;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 8px;
     }
 </style>
 """
-try:
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-except Exception:
-    pass
+st.markdown(DARK_NAVY_CSS, unsafe_allow_html=True)
 
+# 4. Session State Management
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "selected_org" not in st.session_state:
+    st.session_state.selected_org = None
+if "financial_records" not in st.session_state:
+    st.session_state.financial_records = []
+if "calculations" not in st.session_state:
+    st.session_state.calculations = {}
+if "simulation_result" not in st.session_state:
+    st.session_state.simulation_result = None
+if "ai_explanation" not in st.session_state:
+    st.session_state.ai_explanation = ""
 
-def init_app_state() -> None:
-    """Ensure database is seeded and session state is initialized."""
-    if "db_initialized" not in st.session_state:
-        seed_database()
-        st.session_state["db_initialized"] = True
+# 5. FIRST SCREEN: DIRECT AUTHENTICATION
+if st.session_state.user is None:
+    st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.markdown("<span class='title-pill'>FINANCIAL INTELLIGENCE SYSTEM</span>", unsafe_allow_html=True)
+        st.markdown("# 🦋 The Financial Butterfly Effect")
+        st.markdown("Please authenticate to access the corporate financial analysis and ripple-effect engine.")
 
-    if "user" not in st.session_state:
-        st.session_state["user"] = None
+        auth_tab1, auth_tab2 = st.tabs(["Sign In", "Create Account"])
 
-    if "current_org_id" not in st.session_state:
-        st.session_state["current_org_id"] = None
+        with auth_tab1:
+            st.markdown("### Sign In to Your Account")
+            login_email = st.text_input("Email Address", key="login_email")
+            login_pass = st.text_input("Password", type="password", key="login_password")
+            login_btn = st.button("Sign In", type="primary", use_container_width=True)
 
+            if login_btn:
+                success, msg, user_obj = authenticate_user(login_email, login_pass)
+                if success:
+                    st.session_state.user = user_obj
+                    st.success("Authenticated successfully!")
+                    st.rerun()
+                else:
+                    st.error(msg)
 
-def render_login_registration() -> None:
-    """Renders authentication portal when user is not signed in."""
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    col_a, col_main, col_b = st.columns([1, 1.8, 1])
-    with col_main:
-        st.markdown(f"""
-        <div style="text-align: center; margin-bottom: 24px;">
-            <div style="font-size: 50px;">🦋</div>
-            <div style="font-size: 26px; font-weight: 800; color: #f59e0b; letter-spacing: 1px; margin-top: 8px;">
-                {config.APP_NAME.upper()}
-            </div>
-            <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">
-                {config.APP_SUBTITLE}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        with auth_tab2:
+            st.markdown("### Create New Account")
+            reg_name = st.text_input("Full Name (Optional)", key="reg_name")
+            reg_email = st.text_input("Email Address", key="reg_email")
+            reg_pass = st.text_input("Password (min. 6 characters)", type="password", key="reg_password")
+            reg_confirm = st.text_input("Confirm Password", type="password", key="reg_confirm")
+            reg_btn = st.button("Create Account", type="primary", use_container_width=True)
 
-        tab_login, tab_register, tab_quick = st.tabs(["🔐 Sign In", "📝 Create Account", "⚡ Demo Access"])
-
-        with tab_login:
-            with st.form("login_form"):
-                uname = st.text_input("Username or Email", value="admin")
-                pwd = st.text_input("Password", type="password", value="admin123")
-                submit_login = st.form_submit_button("Sign In to Decision Suite", type="primary", use_container_width=True)
-
-                if submit_login:
-                    with get_db_context() as db:
-                        success, user, msg = authenticate_user(db, uname, pwd)
-                        if success:
-                            st.session_state["user"] = user
-                            st.success(f"Welcome back, {user.full_name}!")
-                            st.rerun()
-                        else:
-                            st.error(msg)
-
-        with tab_register:
-            with st.form("reg_form"):
-                reg_name = st.text_input("Full Name", placeholder="e.g. Dr. Rajesh Sharma")
-                reg_uname = st.text_input("Username", placeholder="e.g. rsharma")
-                reg_email = st.text_input("Corporate Email", placeholder="e.g. rsharma@company.com")
-                reg_pwd = st.text_input("Password (min 6 characters)", type="password")
-                reg_role = st.selectbox("Designation", [
-                    config.ROLE_FINANCIAL_ANALYST,
-                    config.ROLE_FINANCIAL_MANAGER,
-                    config.ROLE_ORG_ADMIN,
-                ], format_func=lambda x: config.ROLE_DISPLAY_NAMES.get(x, x))
-                submit_reg = st.form_submit_button("Register Account", type="primary", use_container_width=True)
-
-                if submit_reg:
-                    if len(reg_pwd) < 6:
-                        st.error("Password must be at least 6 characters.")
-                    elif not reg_uname or not reg_email or not reg_name:
-                        st.error("All fields are required.")
+            if reg_btn:
+                if reg_pass != reg_confirm:
+                    st.error("Passwords do not match.")
+                else:
+                    success, msg, user_obj = create_user(reg_email, reg_pass, reg_name)
+                    if success:
+                        st.session_state.user = user_obj
+                        st.success("Account created! Logging you in...")
+                        st.rerun()
                     else:
-                        with get_db_context() as db:
-                            success, new_user, msg = register_user(
-                                db,
-                                username=reg_uname,
-                                email=reg_email,
-                                password=reg_pwd,
-                                full_name=reg_name,
-                                role=reg_role,
-                            )
-                            if success:
-                                st.session_state["user"] = new_user
-                                st.success("Account registered successfully!")
-                                st.rerun()
-                            else:
-                                st.error(msg)
+                        st.error(msg)
 
-        with tab_quick:
-            st.markdown("#### Quick Demonstration Credentials")
-            st.write("Click any persona below for instant 1-click test authentication:")
-            c_adm, c_ana = st.columns(2)
-            with c_adm:
-                if st.button("👑 Admin Persona (Universal Access)", use_container_width=True):
-                    with get_db_context() as db:
-                        _, user, _ = authenticate_user(db, "admin", "admin123")
-                        st.session_state["user"] = user
-                        st.rerun()
-            with c_ana:
-                if st.button("📊 Analyst Persona (Standard Access)", use_container_width=True):
-                    with get_db_context() as db:
-                        _, user, _ = authenticate_user(db, "analyst", "analyst123")
-                        st.session_state["user"] = user
-                        st.rerun()
+    st.stop()
 
+# 6. AUTHENTICATED USER DASHBOARD
+# Sidebar Navigation
+with st.sidebar:
+    st.markdown("<span class='title-pill'>THE FINANCIAL BUTTERFLY EFFECT</span>", unsafe_allow_html=True)
 
-def main():
-    init_app_state()
-
-    current_user = st.session_state["user"]
-    if not current_user:
-        render_login_registration()
-        return
-
-    # Authenticated Session
-    with get_db_context() as db:
-        user_orgs = get_user_organisations(db, current_user)
-
-    if not user_orgs:
-        st.error("You are not currently assigned to any organisations. Contact a Platform Administrator.")
-        if st.sidebar.button("Sign Out"):
-            st.session_state["user"] = None
-            st.rerun()
-        return
-
-    # Ensure valid current_org_id
-    if not st.session_state["current_org_id"] or st.session_state["current_org_id"] not in [o.id for o in user_orgs]:
-        st.session_state["current_org_id"] = user_orgs[0].id
-
-    with get_db_context() as db:
-        current_org = get_organisation_by_id(db, st.session_state["current_org_id"])
-
-    # -----------------------------
-    # Sidebar Navigation & Branding
-    # -----------------------------
-    with st.sidebar:
+    # Active Organisation Status Display
+    if st.session_state.selected_org:
+        org_name = st.session_state.selected_org.get("name")
+        ticker = st.session_state.selected_org.get("ticker")
+        ticker_str = f" ({ticker})" if ticker else ""
         st.markdown(f"""
-        <div style="padding: 10px 0 16px 0; border-bottom: 1px solid #1e293b;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="font-size: 28px;">🦋</span>
-                <div>
-                    <div style="font-size: 15px; font-weight: 800; color: #f59e0b; line-height: 1.1;">FINANCIAL BUTTERFLY</div>
-                    <div style="font-size: 10px; color: #94a3b8; font-weight: 600;">EFFECT & DECISION SYSTEM</div>
-                </div>
-            </div>
+        <div style="background-color: #0A1128; padding: 10px 14px; border-radius: 6px; border: 1px solid #00F5D4; margin: 10px 0;">
+            <span style="color: #00F5D4; font-size: 11px; font-weight: bold;">ACTIVE ORGANISATION:</span><br/>
+            <span style="color: #FEFCFB; font-weight: 700; font-size: 14px;">{org_name}{ticker_str}</span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background-color: #0A1128; padding: 10px 14px; border-radius: 6px; border: 1px dashed #1282A2; margin: 10px 0;">
+            <span style="color: #A0C4E2; font-size: 12px;">No Organisation Selected</span>
         </div>
         """, unsafe_allow_html=True)
 
-        # Active Organisation Switcher Pill
-        org_names = {o.id: o.name for o in user_orgs}
-        selected_org_id = st.selectbox(
-            "🏢 Active Organisation",
-            options=list(org_names.keys()),
-            format_func=lambda x: org_names[x],
-            index=list(org_names.keys()).index(current_org.id) if current_org.id in org_names else 0,
-        )
-        if selected_org_id != current_org.id:
-            st.session_state["current_org_id"] = selected_org_id
-            st.rerun()
+    st.markdown("### Navigation")
+    menu_selection = st.radio(
+        "Go to:",
+        [
+            "1. Organisation Search",
+            "2. Financial Overview",
+            "3. Butterfly Effect Analysis",
+            "4. AI Insights & Reports"
+        ],
+        label_visibility="collapsed"
+    )
 
-        st.markdown("---")
+    st.markdown("---")
+    # Account & Logout Controls
+    if st.session_state.user:
+        st.markdown(f"**Signed in as:**")
+        st.caption(f"{st.session_state.user.email}")
+        if getattr(st.session_state.user, "full_name", None):
+            st.caption(f"_{st.session_state.user.full_name}_")
 
-        # Navigation Menu
-        nav_selection = st.radio(
-            "Navigation",
-            options=[
-                "🏛️ Executive Dashboard",
-                "🦋 Butterfly Effect Simulator",
-                "📊 Financial Data Management",
-                "📈 Investment Portfolio",
-                "💰 Savings Optimisation",
-                "⚖️ Scenario Comparison",
-                "🔮 Financial Forecasting (ML)",
-                "🛡️ Risk Engine & Stress Testing",
-                "🤖 AI Financial Assistant",
-                "🏢 Organisation Management",
-                "📑 Reports & PDF Export",
-                "⚙️ System Settings",
-            ],
-            label_visibility="collapsed",
-        )
+    if st.button("Log Out", type="secondary", use_container_width=True):
+        st.session_state.user = None
+        st.session_state.selected_org = None
+        st.session_state.financial_records = []
+        st.session_state.calculations = {}
+        st.session_state.simulation_result = None
+        st.session_state.ai_explanation = ""
+        st.rerun()
 
-        st.markdown("---")
-
-        # NVIDIA NIM Status Pill
-        is_nim, _ = nvidia_client.is_available()
-        nim_badge = "🟢 NIM Active" if is_nim else "⚡ Fallback Mode"
-        st.markdown(f"""
-        <div style="background-color: #131d36; border: 1px solid #273549; border-radius: 8px; padding: 10px; font-size: 11px;">
-            <div style="color: #94a3b8;">NVIDIA Nemotron: <b style="color: {'#10b981' if is_nim else '#f59e0b'};">{nim_badge}</b></div>
-            <div style="color: #64748b; margin-top: 2px;">Currency: <b>{current_org.currency} ({config.CURRENCY_CODE})</b></div>
+# Top persistent organisation banner in main area
+if st.session_state.selected_org:
+    active_name = st.session_state.selected_org.get("name")
+    active_country = st.session_state.selected_org.get("country", "Global")
+    active_industry = st.session_state.selected_org.get("industry", "Enterprise")
+    st.markdown(f"""
+    <div style="background: linear-gradient(90deg, #001F54 0%, #034078 100%); padding: 10px 20px; border-radius: 8px; border-left: 4px solid #00F5D4; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <span style="color: #00F5D4; font-size: 11px; font-weight: bold; text-transform: uppercase;">Currently Analyzing</span>
+            <h3 style="margin: 0; color: #FEFCFB; font-size: 18px;">{active_name}</h3>
         </div>
-        """, unsafe_allow_html=True)
+        <div style="text-align: right; color: #A0C4E2; font-size: 12px;">
+            <b>Jurisdiction:</b> {active_country} | <b>Industry:</b> {active_industry}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        st.markdown(" ")
-
-        # User Profile & Logout
-        col_u1, col_u2 = st.columns([1.8, 1])
-        with col_u1:
-            st.markdown(f"**{current_user.full_name}**<br><span style='font-size:11px; color:#94a3b8;'>{config.ROLE_DISPLAY_NAMES.get(current_user.role, current_user.role)}</span>", unsafe_allow_html=True)
-        with col_u2:
-            if st.button("Sign Out", type="secondary"):
-                st.session_state["user"] = None
-                st.session_state["current_org_id"] = None
-                st.rerun()
-
-    # -----------------------------
-    # Main Page Router
-    # -----------------------------
-    if "Executive Dashboard" in nav_selection:
-        render_dashboard(current_org, current_user)
-    elif "Butterfly Effect Simulator" in nav_selection:
-        render_simulator_page(current_user, current_org)
-    elif "Financial Data" in nav_selection:
-        render_financial_records_page(current_user, current_org)
-    elif "Investment Portfolio" in nav_selection:
-        render_investments_page(current_user, current_org)
-    elif "Savings Optimisation" in nav_selection:
-        render_savings_page(current_user, current_org)
-    elif "Scenario Comparison" in nav_selection:
-        render_scenarios_page(current_user, current_org)
-    elif "Financial Forecasting" in nav_selection:
-        render_predictions_page(current_user, current_org)
-    elif "Risk Engine" in nav_selection:
-        render_risk_analysis_page(current_user, current_org)
-    elif "AI Financial Assistant" in nav_selection:
-        render_ai_assistant_page(current_user, current_org)
-    elif "Organisation Management" in nav_selection:
-        render_organisations_page(current_user, current_org)
-    elif "Reports" in nav_selection:
-        render_reports_page(current_user, current_org)
-    elif "System Settings" in nav_selection:
-        render_settings_page(current_user, current_org)
-
-
-if __name__ == "__main__":
-    main()
+# 7. Route to Active Screen
+if menu_selection == "1. Organisation Search":
+    render_organisation_search()
+elif menu_selection == "2. Financial Overview":
+    render_financial_overview()
+elif menu_selection == "3. Butterfly Effect Analysis":
+    render_butterfly_analysis()
+elif menu_selection == "4. AI Insights & Reports":
+    render_ai_reports()

@@ -1,54 +1,23 @@
-"""
-Database connection and session management for The Financial Butterfly Effect.
-Supports SQLite out of the box and maintains PostgreSQL compatibility.
-"""
-
-from contextlib import contextmanager
-from typing import Generator
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker
 from config import DATABASE_URL
-from database.models import Base
-
-# Engine configuration: SQLite needs check_same_thread=False for Streamlit multi-threading
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args=connect_args,
-    pool_pre_ping=True,
-    echo=False
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-    expire_on_commit=False
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+Base = declarative_base()
 
-def init_db() -> None:
-    """Create all tables defined in Base models."""
+def init_db():
+    import database.models  # Ensure models are registered
     Base.metadata.create_all(bind=engine)
 
-
-@contextmanager
-def get_db_context() -> Generator[Session, None, None]:
-    """Context manager for safe database transactions."""
-    session = SessionLocal()
+def get_db():
+    db = SessionLocal()
     try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
+        yield db
     finally:
-        session.close()
-
-
-def get_db() -> Session:
-    """Returns a standalone session instance; caller must close."""
-    return SessionLocal()
+        db.close()
