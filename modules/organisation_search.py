@@ -191,7 +191,7 @@ class OrganisationSearchEngine:
         finally:
             session.close()
 
-    def get_user_search_history(self, user_id: int, limit: int = 6) -> List[Dict[str, Any]]:
+    def get_user_search_history(self, user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Retrieves recent organisations searched by this user.
         """
@@ -221,5 +221,45 @@ class OrganisationSearchEngine:
                     "searched_at": sh.searched_at.strftime("%Y-%m-%d %H:%M") if sh.searched_at else "Recently"
                 })
             return history
+        finally:
+            session.close()
+
+    def delete_user_search_entry(self, user_id: int, history_id: int) -> bool:
+        """
+        Deletes a specific search history entry for the user.
+        """
+        session = SessionLocal()
+        try:
+            entry = session.query(SearchHistory).filter(
+                SearchHistory.id == history_id,
+                SearchHistory.user_id == user_id
+            ).first()
+            if entry:
+                session.delete(entry)
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error deleting search history entry {history_id}: {e}")
+            return False
+        finally:
+            session.close()
+
+    def clear_all_user_search_history(self, user_id: int) -> bool:
+        """
+        Clears all search history records for the user.
+        """
+        session = SessionLocal()
+        try:
+            session.query(SearchHistory).filter(
+                SearchHistory.user_id == user_id
+            ).delete()
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Error clearing search history for user {user_id}: {e}")
+            return False
         finally:
             session.close()
