@@ -37,3 +37,17 @@ def test_user_search_history_recording_and_retrieval():
     assert history[0]["org_id"] == org.id
     assert history[0]["name"] == org.name
     assert history[0]["ticker"] == "TEST"
+
+    # 5. Delete specific history entry
+    hist_id = history[0]["history_id"]
+    del_ok = search_engine.delete_user_search_entry(user.id, hist_id)
+    assert del_ok is True
+    updated_history = search_engine.get_user_search_history(user.id)
+    assert not any(h["history_id"] == hist_id for h in updated_history)
+
+    # 6. Test clear all history
+    search_engine.record_user_search(user.id, org.id)
+    assert len(search_engine.get_user_search_history(user.id)) >= 1
+    clear_ok = search_engine.clear_all_user_search_history(user.id)
+    assert clear_ok is True
+    assert len(search_engine.get_user_search_history(user.id)) == 0

@@ -32,25 +32,42 @@ def render_organisation_search():
             st.session_state.search_candidates = candidates
             st.session_state.last_search_query = query
 
-    # User Search History Section
+    # Slideable / Scrollable Search History Section
     user = st.session_state.get("user")
     if user:
-        history = search_engine.get_user_search_history(user.id, limit=6)
+        history = search_engine.get_user_search_history(user.id, limit=100)
         if history:
-            with st.expander("🕒 Your Recent Searches (Instant Re-load)", expanded=not bool(st.session_state.get("search_candidates"))):
-                st.caption("Quickly reload previously fetched financial disclosures without re-querying external APIs:")
-                hist_cols = st.columns(min(len(history), 3))
-                for h_idx, h_item in enumerate(history[:3]):
-                    with hist_cols[h_idx % 3]:
+            st.markdown("---")
+            h_head1, h_head2 = st.columns([3, 1])
+            with h_head1:
+                st.markdown(f"#### 🕒 Your Search History ({len(history)} saved)")
+                st.caption("Scroll / slide inside the box below to view past searches. Click 'Load' to restore or '🗑️' to delete:")
+            with h_head2:
+                st.write("")
+                if st.button("🗑️ Clear All History", key="main_clear_all_history", type="secondary", use_container_width=True):
+                    search_engine.clear_all_user_search_history(user.id)
+                    st.success("All search history cleared!")
+                    st.rerun()
+
+            # Fixed-height scrollable container: slides up/down smoothly without taking over the screen
+            with st.container(height=260):
+                for h_item in history:
+                    c_info, c_load, c_del = st.columns([4, 1.4, 0.8])
+                    with c_info:
+                        ticker_badge = f" • <span style='color: #00F5D4; font-weight: 600;'>{h_item.get('ticker') or 'Unlisted'}</span>"
+                        country_badge = f" <span style='color: #A0C4E2; font-size: 12px;'>({h_item.get('country') or 'Global'})</span>"
                         st.markdown(f"""
-                        <div style="background-color: #001F54; padding: 12px; border-radius: 6px; border: 1px solid #1282A2; margin-bottom: 8px;">
-                            <b style="color: #FEFCFB; font-size: 14px;">{h_item['name']}</b><br/>
-                            <span style="color: #A0C4E2; font-size: 11px;">{h_item.get('ticker') or 'Unlisted'} • {h_item.get('country') or 'Global'}</span><br/>
-                            <span style="color: #8D99AE; font-size: 10px;">Visited: {h_item['searched_at']}</span>
+                        <div style='margin-bottom: 2px;'>
+                            <b style='color: #FEFCFB; font-size: 14px;'>{h_item['name']}</b>{ticker_badge}{country_badge}<br/>
+                            <span style='color: #8D99AE; font-size: 11px;'>Visited: {h_item['searched_at']}</span>
                         </div>
                         """, unsafe_allow_html=True)
-                        if st.button("⚡ Instant Load", key=f"hist_load_{h_item['org_id']}", use_container_width=True):
-                            with st.spinner(f"Loading saved financial data for {h_item['name']}..."):
+
+                    with c_load:
+                        is_active = (st.session_state.selected_org and st.session_state.selected_org.get("id") == h_item["org_id"])
+                        load_btn_type = "primary" if is_active else "secondary"
+                        if st.button("⚡ Load", key=f"main_hist_load_{h_item['history_id']}", type=load_btn_type, use_container_width=True):
+                            with st.spinner(f"Loading {h_item['name']}..."):
                                 saved_records = collector.get_saved_financials(h_item['org_id'])
                                 metric_values = {
                                     r["metric_name"]: r["value"] for r in saved_records if r.get("value") is not None
@@ -72,8 +89,14 @@ def render_organisation_search():
                                 st.session_state.simulation_result = None
                                 st.session_state.ai_explanation = ""
                                 search_engine.record_user_search(user.id, h_item["org_id"])
-                                st.success(f"Loaded **{h_item['name']}** successfully!")
                                 st.rerun()
+
+                    with c_del:
+                        if st.button("🗑️", key=f"main_hist_del_{h_item['history_id']}", help=f"Delete {h_item['name']} from history", use_container_width=True):
+                            search_engine.delete_user_search_entry(user.id, h_item['history_id'])
+                            st.rerun()
+
+                    st.markdown("<hr style='margin: 3px 0 6px 0; border: none; border-top: 1px solid rgba(18, 130, 162, 0.2);'>", unsafe_allow_html=True)
 
     candidates = st.session_state.get("search_candidates", [])
     if candidates:

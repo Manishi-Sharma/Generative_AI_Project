@@ -14,6 +14,9 @@ from views.organisation_search import render_organisation_search
 from views.financial_overview import render_financial_overview
 from views.butterfly_analysis import render_butterfly_analysis
 from views.ai_reports import render_ai_reports
+from modules.organisation_search import OrganisationSearchEngine
+from modules.public_data_collector import PublicDataCollector
+from modules.financial_calculations import FinancialCalculator
 
 # 1. Page Configuration
 st.set_page_config(
