@@ -1,9 +1,13 @@
+# Environment Variables
+.env
+
 # Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
 *$py.class
 
 # Database
+*.db
 *.sqlite3
 
 # Distribution / packaging
